@@ -189,6 +189,7 @@ TEST(Allocator, DefragMoveTwice) {
 TEST(Allocator, DefragAvailable) {
     Allocator a(buf, sizeof(buf));
 
+    printf("buffer: [%p  <> %p]\n", &buf, &(buf[65535]));
     vector<Pointer> ptrs;
     int size = 135;
 

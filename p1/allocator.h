@@ -86,7 +86,18 @@ public:
         block = NULL;
         id = -1;
     }
-
+    
+    void show()
+    {
+        if (block != NULL)
+        {
+            (*block)->show();
+        }
+        else
+        {
+            printf("NULL");
+        }
+    }
     int get_id() { return id; }
 
 
@@ -118,9 +129,15 @@ public:
         for (int i = 0; i < max_ptrs; i++)
         {
             if (blocks_used[i] != NULL)
+            {
                 delete blocks_used[i];
+                blocks_used[i] = NULL;
+            }
             if (blocks_free[i] != NULL)
+            {
+                blocks_free[i] = NULL;
                 delete blocks_free[i];
+            }
         }
     }
     

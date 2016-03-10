@@ -324,14 +324,16 @@ void Allocator::defrag()
     
     del_block_free(free_id);
 
-    Memblock *block = new Memblock(min_start, free_size);
+//    Memblock *block = new Memblock(min_start, free_size);
+    Memblock *block = new Memblock(blocks_used[closest_id]->get_end() + 1, free_size); 
     add_block_free(block);        
 
     defrag();
 }
  
-                                      
-/*char buff[65536];
+
+/*                                      
+char buff[65536];
         
 int main()
 {
@@ -342,10 +344,11 @@ int main()
     
     Pointer p1 = a.alloc(size);
     Pointer p2 = a.alloc(size);
-    Pointer p3 = a.alloc(size);
 
+    a.realloc(p1, 270);
+    a.free(p1);
     a.free(p2);
-    a.defrag();
+
     a.show();
 
 }        
