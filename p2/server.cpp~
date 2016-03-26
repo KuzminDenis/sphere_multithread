@@ -1,0 +1,172 @@
+#include "server.h"
+
+
+
+
+
+Server::Message *read_from_user(User &user) 
+{
+    char buff[BUFFER_SIZE];
+
+    int bytes_recieved = recv(user.fd, &buff, BUFFER_SIZE, 0);
+    if (bytes_recieved > 0) 
+    {
+        buff[bytes_recieved] = '\0';
+        Message *msg = new Message(COMMON, buff, user);
+        return msg;    
+    } 
+    else if (bytes_recieved == 0) 
+    { 
+        return NULL;
+    }
+
+    perror("recv");
+    exit(EXIT_FAILURE);
+}
+
+void Server::send_message(Message *msg, std::vector<User> users)
+{
+    for (size_t i = 0; i < users.size(); i++)
+    {
+        if (users[i].fd != msg->fd)
+            send(users[i].fd, msg->text, BUFFER_SIZE, 0);
+    }             
+}
+
+void Server::setnonblocking(int fd) 
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int Server::id_by_fd(int fd, std::vector<User> &users)
+{
+    for (size_t i = 0; i < users.size(); i++)
+        if (users[i].fd == fd)
+            return i;
+    return -1;
+} 
+
+
+Server::Server(int port = 1488) 
+{
+    listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_sock == -1)
+    {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (0 != bind(listen_sock, (struct sockaddr *) &addr, 
+                  sizeof(addr))) 
+    {
+        perror("bind");
+        exit(EXIT_FAILURE);
+    }
+    
+    if ( -1 == listen(listen_sock, 10)) 
+    {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    } 
+
+    epollfd = epoll_create1(0);
+    if (epollfd == -1) 
+    {
+        perror("epoll_create1");
+        exit(EXIT_FAILURE);
+    }
+
+    ev.events = EPOLLIN;
+    ev.data.fd = listen_sock;
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, listen_sock, &ev) == -1) 
+    {
+        perror("epoll_ctl: listen_sock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+Server::manage_chat()
+{
+    while (true) 
+    {
+        // How many descpitors are ready for interaction
+        nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
+        if (nfds == -1) 
+        {
+            perror("epoll_wait");
+            exit(EXIT_FAILURE);
+        }
+
+        // iterating through ready descriptors
+        for (int n = 0; n < nfds; ++n) 
+        {
+            // new connection
+            if (events[n].data.fd == listen_sock) 
+            {
+                conn_sock = accept(listen_sock, NULL, NULL);
+                if (conn_sock == -1) 
+                {
+                    perror("accept");
+                    exit(EXIT_FAILURE);
+                }
+               
+                setnonblocking(conn_sock);
+                ev.events = EPOLLIN | EPOLLET;
+                ev.data.fd = conn_sock;
+                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, conn_sock,
+                            &ev) == -1) 
+                {
+                    perror("epoll_ctl: conn_sock");
+                    exit(EXIT_FAILURE);
+                }
+    
+                User user = User(conn_sock);
+                users.push_back(user);
+    
+                msg = new Message(CONNECT, NULL, user);
+                send_message(msg, users);
+                delete msg;
+
+            } 
+            else 
+            {
+                int id = id_by_fd(events[n].data.fd, users);
+                msg = read_from_user(users[id]);
+                if (msg != NULL) 
+                {
+                    send_message(msg, users);
+                    delete msg;
+                }
+                else
+                {
+                    msg = new Message(DISCON, NULL, users[id]);
+                    send_message(msg, users);
+                    delete msg;
+    
+                    shutdown(events[n].data.fd, SHUT_RDWR);
+                    close(events[n].data.fd);
+                    for (std::vector<User>::iterator it = users.begin(); 
+                         it != users.end(); ++it)
+                    {
+                        if (it->fd == events[n].data.fd)
+                        {
+                            users.erase(it);
+                            break;
+                        }
+                    }  
+                }
+            }
+        } // for
+    }// while
+}
+
+
+
+
+
