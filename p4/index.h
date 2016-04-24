@@ -10,7 +10,7 @@
 typedef std::map< int64_t, std::vector<int64_t> > index_t;
 typedef std::pair< int64_t, std::vector<int64_t> > index_elem_t;
 
-const size_t max_parts = 10;
+const size_t max_parts = 2;
 
 class IndexBuilder
 {
