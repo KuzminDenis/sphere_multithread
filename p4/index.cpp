@@ -9,16 +9,19 @@ size_t IndexBuilder::get_file_size(const char *file_name)
 {
     std::ifstream f(file_name, 
                     std::ifstream::ate | std::ifstream::binary);
-    return f.tellg();
+    size_t result = f.tellg();
+    f.close();
+    return result;
 }
 
 // constructor ------------------------------------------------------
 IndexBuilder::IndexBuilder(const char *input_file_name) 
-    : input_file(input_file_name)
+    : input_file(input_file_name, std::ifstream::binary)
 {
     input_file_size = get_file_size(input_file_name);
     size_threshold = input_file_size/max_parts + 1;
 
+    n_parts = 0;
     unique_word_ids.clear();
 }
 
@@ -41,20 +44,19 @@ void IndexBuilder::build_index(const char *output_file_name)
     bool file_finished = false;
     int64_t zero = 0;
 
-    std::ofstream output_file(output_file_name);
+    std::ofstream output_file(output_file_name, std::ofstream::binary);
 
     // split input data into parts and store in temporary files
     while ( (part_i < max_parts) && (!file_finished) ) 
     {
         index_t index_part = build_index_part(part_i);
-        
         if (index_part.size() == 0)
         {
             file_finished = true;
-            n_parts = part_i + 1;
         }
         else
         {
+            n_parts++;
             dump_index_part_to_file(index_part, part_i);
         }
 
@@ -144,11 +146,11 @@ void IndexBuilder::append_doc_ids(int64_t target_word_id,
     
         part_files[part_i].seekg(0, part_files[part_i].beg);
         while ( (!word_found) && 
-                (part_files[part_i].readsome(buff64, 8) != 0) )
+                (part_files[part_i].read(buff64, 8) != 0) )
         {
             word_id = *(reinterpret_cast<int64_t*>(buff64));  
               
-            part_files[part_i].readsome(buff64, 8);
+            part_files[part_i].read(buff64, 8);
             offset = *(reinterpret_cast<int64_t*>(buff64));
 
             if (target_word_id == word_id)
@@ -162,12 +164,12 @@ void IndexBuilder::append_doc_ids(int64_t target_word_id,
             continue;
 
         part_files[part_i].seekg(offset);
-        part_files[part_i].readsome(buff32, 4);
+        part_files[part_i].read(buff32, 4);
 
         n = *(reinterpret_cast<int32_t*>(buff32));
         for (int32_t j = 0; j < n; j++)
         {
-            part_files[part_i].readsome(buff64, 8);
+            part_files[part_i].read(buff64, 8);
             doc_id = *(reinterpret_cast<int64_t*>(buff64));
             doc_ids.push_back(doc_id);
         }
@@ -188,23 +190,24 @@ index_t IndexBuilder::build_index_part(size_t part_i)
     size_t bytes_read = 0;
 
     while ( (!part_finished) && 
-            (input_file.readsome(buff64, 8) != 0) )
+            (input_file.read(buff64, 8) != 0) )
     {
 
         bytes_read += 8;
-        input_file.readsome(buff32, 4);
+        input_file.read(buff32, 4);
         bytes_read += 4;
 
         int64_t doc_id = *(reinterpret_cast<int64_t*>(buff64));
         int32_t n = *(reinterpret_cast<int32_t*>(buff32));
-
         for (int32_t i = 0; i < n; i++)
         {
-            input_file.readsome(buff64, 8);
+            for (int k = 0; k < 8; k++)
+                buff64[k] = 0;
+
+            input_file.read(buff64, 8);
             bytes_read += 8;
 
             int64_t word_id = *(reinterpret_cast<int64_t*>(buff64));
-
             if (index_part.find(word_id) == index_part.end())
             {
                 std::vector<int64_t> value;
@@ -224,8 +227,10 @@ index_t IndexBuilder::build_index_part(size_t part_i)
         if (bytes_read >= size_threshold)
             part_finished = true;    
 
+        for (int k = 0; k < 8; k++)
+           buff64[k] = 0;
     }
-
+     
     return index_part;
 }
 
@@ -238,7 +243,8 @@ void IndexBuilder::dump_index_part_to_file(index_t &index_part,
 
     std::string std_file_name = 
         std::string("ind_part") + std::to_string(part_i);
-    std::ofstream part_file(std_file_name.c_str());
+    std::ofstream part_file(std_file_name.c_str(), 
+                            std::ofstream::binary);
 
     size_t offset = (8+8)*(words_count+1);
 
@@ -278,13 +284,14 @@ void IndexBuilder::dump_index_part_to_file(index_t &index_part,
     }
 
     part_file.close();
+    //echo_index_file(std_file_name.c_str());
 }
 
 // debug method for printing result file contents -------------------
 void IndexBuilder::echo_index_file(const char *file_name)
 {
     std::cout << std::endl << "----------" << std::endl;
-    std::ifstream f(file_name);
+    std::ifstream f(file_name, std::ifstream::binary);
 
     char buff64[8];
     char buff32[4];
@@ -292,13 +299,13 @@ void IndexBuilder::echo_index_file(const char *file_name)
     bool header_finished = false; 
 
     while ( (!header_finished) && 
-            (f.readsome(buff64, 8) != 0) )
+            (f.read(buff64, 8) != 0) )
     {
         int64_t word_id = *(reinterpret_cast<int64_t*>(buff64));
         if (word_id == 0)
             header_finished = true;
         
-        f.readsome(buff64, 8);
+        f.read(buff64, 8);
         int64_t offset = *(reinterpret_cast<int64_t*>(buff64));
 
         std::cout << "WordId = [" << word_id << "] " <<
@@ -306,14 +313,14 @@ void IndexBuilder::echo_index_file(const char *file_name)
 
    }
    
-   while (f.readsome(buff32, 4) != 0)
+   while (f.read(buff32, 4) != 0)
    {
        int32_t n = *(reinterpret_cast<int32_t*>(buff32));
        std::cout << '<' << n << "> ";
 
        for (int32_t i = 0; i < n; i++)
        {
-           f.readsome(buff64, 8);
+           f.read(buff64, 8);
            int64_t doc_id = *(reinterpret_cast<int64_t*>(buff64));
            std::cout << '[' << doc_id << "] ";
        }
@@ -339,7 +346,7 @@ int main(int argc, char **argv)
     IndexBuilder builder(argv[1]);
     builder.build_index(argv[2]);
     
-//    builder.echo_index_file(argv[2]);
+    //builder.echo_index_file(argv[2]);
 
     return 0;
 }

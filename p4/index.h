@@ -12,7 +12,6 @@ typedef std::pair< int64_t, std::vector<int64_t> > index_elem_t;
 
 const size_t max_parts = 10;
 
-
 class IndexBuilder
 {
 
