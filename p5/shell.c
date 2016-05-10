@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
 
 #define NO_ERROR       0
 #define ERROR_EOF      1
@@ -260,7 +261,8 @@ char* read_word(int *status, int *err)
     int c, i = 0, quotes = NO_QUOTES;
     char *wrd;
     char *buff = malloc(BUFFER_SIZE);
-    
+    buff[0] = '\0';
+
     *err = NO_ERROR;
     if (((*status) = skip_spaces()) == EOF)
         return NULL;
@@ -330,7 +332,9 @@ char** add_word_to_cmd(char** cmd, char* wrd, int* num)
         return tmp;
     }
     else
+    {
         return cmd;
+    }
 }
 
 int read_address(int* status, int* status_prev, char** wrd, 
@@ -455,16 +459,21 @@ struct command *read_command(int* st, int *err, int* background)
             *st = status;
     }   
     
-    struct command *cmd = malloc(sizeof(*cmd));
-    cmd->argv = argv;
-    cmd->in = in;
-    cmd->out = out;
-    cmd->mode = mode;
-    cmd->pid = -1;
-    cmd->status = -1;     
-    cmd->fd_in = -1;
-    cmd->fd_out = -1;
-    return cmd;            
+    if (argv != NULL)
+    {
+        struct command *cmd = malloc(sizeof(*cmd));
+        cmd->argv = argv;
+        cmd->in = in;
+        cmd->out = out;
+        cmd->mode = mode;
+        cmd->pid = -1;
+        cmd->status = -1;     
+        cmd->fd_in = -1;
+        cmd->fd_out = -1;
+        return cmd;
+    }
+    else
+        return NULL;            
 }
 
 int command_length(char **cmd)
@@ -496,6 +505,9 @@ struct pipeline_list *read_pipeline(int* st, int* err, int* background)
     *err = error;
     *st = status;
     
+    if (pipeline == NULL)
+        return NULL; 
+
     pipeline->background = *background;  
     return pipeline;
 }
@@ -699,6 +711,8 @@ void pipeline_execution(struct pipeline_list *pipeline)
     struct pipeline_list *tmp = pipeline;
     struct command *prev_cmd = NULL;
 
+    pipeline_pids = NULL;
+
     int last;
     if (tmp != NULL)
     {
@@ -785,6 +799,9 @@ void pipeline_execution(struct pipeline_list *pipeline)
 
 void pipeline_execution1(struct pipeline_list *pipeline)
 {
+    if (pipeline == NULL)
+        return; 
+
     if (pipeline->background == IN_FOREGROUND)
     {
         pipeline_execution(pipeline);
@@ -833,7 +850,7 @@ int main(void)
         pipeline = read_pipeline(&status,&error,&background);   
         if ((error == NO_ERROR) && (status != EOF))
         {
-            //print_pipeline(pipeline);
+        //    print_pipeline(pipeline);
             pipeline_execution1(pipeline);
         }
     
