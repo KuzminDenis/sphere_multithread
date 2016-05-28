@@ -86,6 +86,14 @@ void IndexBuilder::build_index(const char *output_file_name)
     int64_t body_offset = (8+8)*(n_unique_words + 1);
     int64_t title_offset = 0;
 
+    for (size_t i = 0; i < n_parts; i++)
+    {
+        need_to_read[i] = true;
+        last_word[i] = 0;
+        return_addr[i] = 0;
+        finished[i] = false;
+    }
+
     // iterate through each unique word
     for (std::list<int64_t>::iterator it = unique_word_ids_list.begin();
          it != unique_word_ids_list.end();
@@ -144,35 +152,66 @@ void IndexBuilder::append_doc_ids(int64_t target_word_id,
     {
         bool word_found = false;
     
-        part_files[part_i].seekg(0, part_files[part_i].beg);
-        while ( (!word_found) && 
-                (part_files[part_i].read(buff64, 8) != 0) )
+        if (finished[part_i])
+            continue;
+
+        if (!need_to_read[part_i])
         {
-            word_id = *(reinterpret_cast<int64_t*>(buff64));  
-              
+            if (last_word[part_i] == target_word_id)
+            {
+                word_found = true;
+                offset = last_offset[part_i];
+                need_to_read[part_i] = true;
+            }
+            else
+            {
+                word_found = false;
+                need_to_read[part_i] = false;
+            }
+        }
+        else
+        {
+            part_files[part_i].read(buff64, 8);
+            word_id = *(reinterpret_cast<int64_t*>(buff64));   
+                  
             part_files[part_i].read(buff64, 8);
             offset = *(reinterpret_cast<int64_t*>(buff64));
 
+            if (word_id == 0)
+                finished[part_i] = true;
+
             if (target_word_id == word_id)
+            {
                 word_found = true;
+                need_to_read[part_i] = true;
+                return_addr[part_i] += 16;
+            }
+            else
+            {
+                word_found = false;
+                need_to_read[part_i] = false;    
+                last_word[part_i] = word_id;
+                last_offset[part_i] = offset;
 
-            else if (word_id == 0)
-                break; 
+                return_addr[part_i] += 16;   
+            }  
         }
 
-        if (!word_found)
-            continue;
-
-        part_files[part_i].seekg(offset);
-        part_files[part_i].read(buff32, 4);
-
-        n = *(reinterpret_cast<int32_t*>(buff32));
-        for (int32_t j = 0; j < n; j++)
+	    if (word_found)
         {
-            part_files[part_i].read(buff64, 8);
-            doc_id = *(reinterpret_cast<int64_t*>(buff64));
-            doc_ids.push_back(doc_id);
+            part_files[part_i].seekg(offset);
+            part_files[part_i].read(buff32, 4);
+
+            n = *(reinterpret_cast<int32_t*>(buff32));
+            for (int32_t j = 0; j < n; j++)
+            {
+                part_files[part_i].read(buff64, 8);
+                doc_id = *(reinterpret_cast<int64_t*>(buff64));
+                doc_ids.push_back(doc_id);
+            }
         }
+
+        part_files[part_i].seekg(return_addr[part_i]);
     }
 }
 

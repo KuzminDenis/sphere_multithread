@@ -6,11 +6,12 @@
 #include <string>
 #include <list>
 #include <set>
+#include <algorithm> 
 
 typedef std::map< int64_t, std::vector<int64_t> > index_t;
 typedef std::pair< int64_t, std::vector<int64_t> > index_elem_t;
 
-const size_t max_parts = 2;
+const size_t max_parts = 10;
 
 class IndexBuilder
 {
@@ -33,6 +34,16 @@ private:
     size_t input_file_size;
     size_t size_threshold;
     size_t n_parts;
+
+
+    std::set<int64_t> all_words;
+
+    bool need_to_read[max_parts];
+    int64_t last_word[max_parts];
+    int64_t last_offset[max_parts];
+    size_t return_addr[max_parts];
+    bool finished[max_parts];
+
 
     size_t get_file_size(const char *file_name);
     index_t build_index_part(size_t part_i);
